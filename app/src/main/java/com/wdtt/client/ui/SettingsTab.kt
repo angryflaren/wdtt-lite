@@ -82,6 +82,9 @@ fun SettingsTab() {
 fun SettingsTabContent(context: android.content.Context, scope: kotlinx.coroutines.CoroutineScope, settingsStore: SettingsStore) {
     val tunnelRunning by TunnelManager.running.collectAsStateWithLifecycle()
     
+    var isLinkMode by rememberSaveable { mutableStateOf(false) }
+    var linkInput by rememberSaveable { mutableStateOf("") }
+    
     var peerInput by rememberSaveable { mutableStateOf("") }
     var vkHash1 by rememberSaveable { mutableStateOf("") }
     var vkHash2 by rememberSaveable { mutableStateOf("") }
@@ -96,13 +99,16 @@ fun SettingsTabContent(context: android.content.Context, scope: kotlinx.coroutin
     var initialized by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
+        isLinkMode = settingsStore.wdttLinkMode.first()
+        linkInput = settingsStore.wdttLink.first()
+        
         peerInput = settingsStore.peer.first()
         val hashes = settingsStore.vkHashes.first().split(",")
         vkHash1 = hashes.getOrElse(0) { "" }
         vkHash2 = hashes.getOrElse(1) { "" }
         vkHash3 = hashes.getOrElse(2) { "" }
         vkHash4 = hashes.getOrElse(3) { "" }
-        workersInput = settingsStore.workersPerHash.first().toFloat().coerceIn(1f, 100f)
+        workersInput = settingsStore.workersPerHash.first().toFloat().coerceIn(1f, 50f)
         passwordInput = settingsStore.connectionPassword.first()
         serverDtlsPortInput = settingsStore.serverDtlsPort.first().toString()
         serverWgPortInput = settingsStore.serverWgPort.first().toString()
@@ -117,35 +123,69 @@ fun SettingsTabContent(context: android.content.Context, scope: kotlinx.coroutin
         return
     }
 
-    val combinedHashes = listOf(vkHash1, vkHash2, vkHash3, vkHash4).filter { it.isNotBlank() }.joinToString(",")
-
     fun startTunnelService() {
-        scope.launch {
-            settingsStore.save(
-                peerInput, combinedHashes, "", workersInput.toInt(), "udp", localPortInput.toIntOrNull() ?: 9000, "", false
-            )
-            // Принудительно устанавливаем только ручной режим WBV
-            settingsStore.saveCaptchaMode("wv")
-            settingsStore.saveCaptchaSolveMethod("manual")
-            settingsStore.saveWbvCaptchaSolveMethod("manual")
-            settingsStore.saveConnectionPassword(passwordInput)
-            settingsStore.saveManualPortsEnabled(true)
-            settingsStore.savePorts(
-                serverDtlsPortInput.toIntOrNull() ?: 56000,
-                serverWgPortInput.toIntOrNull() ?: 56001,
-                localPortInput.toIntOrNull() ?: 9000
-            )
+        val finalPeer: String
+        val finalHashes: String
+        val finalWorkers = workersInput.toInt()
+        val finalLocalPort: Int
+        val finalPass: String
+        val finalDtlsPort: Int
+        val finalWgPort: Int
+
+        if (isLinkMode) {
+            val cleanLink = linkInput.trim().removePrefix("wdtt://").substringBefore("#")
+            val parts = cleanLink.split(":")
+            if (parts.size < 5) {
+                android.widget.Toast.makeText(context, "Неверный формат ссылки", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
+            finalPeer = parts[0]
+            finalDtlsPort = parts[1].toIntOrNull() ?: 56000
+            finalWgPort = parts[2].toIntOrNull() ?: 56001
+            finalLocalPort = parts[3].toIntOrNull() ?: 9000
+            finalPass = parts[4]
+            finalHashes = if (parts.size > 5) parts[5] else ""
+
+            scope.launch {
+                settingsStore.saveWdttLink(linkInput)
+                settingsStore.saveWdttLinkMode(true)
+                settingsStore.save(finalPeer, finalHashes, "", finalWorkers, "udp", finalLocalPort, "", false)
+                settingsStore.saveConnectionPassword(finalPass)
+                settingsStore.saveManualPortsEnabled(true)
+                settingsStore.savePorts(finalDtlsPort, finalWgPort, finalLocalPort)
+                settingsStore.saveCaptchaMode("wv")
+                settingsStore.saveCaptchaSolveMethod("manual")
+                settingsStore.saveWbvCaptchaSolveMethod("manual")
+            }
+        } else {
+            finalPeer = peerInput
+            finalHashes = listOf(vkHash1, vkHash2, vkHash3, vkHash4).filter { it.isNotBlank() }.joinToString(",")
+            finalLocalPort = localPortInput.toIntOrNull() ?: 9000
+            finalPass = passwordInput
+            finalDtlsPort = serverDtlsPortInput.toIntOrNull() ?: 56000
+            finalWgPort = serverWgPortInput.toIntOrNull() ?: 56001
+
+            scope.launch {
+                settingsStore.saveWdttLinkMode(false)
+                settingsStore.save(finalPeer, finalHashes, "", finalWorkers, "udp", finalLocalPort, "", false)
+                settingsStore.saveConnectionPassword(finalPass)
+                settingsStore.saveManualPortsEnabled(true)
+                settingsStore.savePorts(finalDtlsPort, finalWgPort, finalLocalPort)
+                settingsStore.saveCaptchaMode("wv")
+                settingsStore.saveCaptchaSolveMethod("manual")
+                settingsStore.saveWbvCaptchaSolveMethod("manual")
+            }
         }
 
         val intent = android.content.Intent(context, TunnelService::class.java).apply {
             action = "START"
-            putExtra("peer", "$peerInput:${serverDtlsPortInput.toIntOrNull() ?: 56000}")
-            putExtra("vk_hashes", combinedHashes)
+            putExtra("peer", "$finalPeer:$finalDtlsPort")
+            putExtra("vk_hashes", finalHashes)
             putExtra("secondary_vk_hash", "")
-            putExtra("workers_per_hash", workersInput.toInt())
-            putExtra("port", localPortInput.toIntOrNull() ?: 9000)
+            putExtra("workers_per_hash", finalWorkers)
+            putExtra("port", finalLocalPort)
             putExtra("sni", "")
-            putExtra("connection_password", passwordInput)
+            putExtra("connection_password", finalPass)
             putExtra("captcha_mode", "wv")
             putExtra("captcha_solve_method", "manual")
             putExtra("fingerprint", "chrome")
@@ -166,77 +206,109 @@ fun SettingsTabContent(context: android.content.Context, scope: kotlinx.coroutin
     ) {
         Text("WDTT Lite - Настройки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
-        OutlinedTextField(
-            value = peerInput,
-            onValueChange = { peerInput = it },
-            label = { Text("IP-сервера") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        TabRow(
+            selectedTabIndex = if (isLinkMode) 1 else 0,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+        ) {
+            Tab(
+                selected = !isLinkMode,
+                onClick = { isLinkMode = false },
+                text = { Text("Вручную", fontWeight = FontWeight.SemiBold) }
+            )
+            Tab(
+                selected = isLinkMode,
+                onClick = { isLinkMode = true },
+                text = { Text("По ссылке", fontWeight = FontWeight.SemiBold) }
+            )
+        }
+
+        if (isLinkMode) {
+            OutlinedTextField(
+                value = linkInput,
+                onValueChange = { linkInput = it },
+                label = { Text("Ссылка-приглашение WDTT") },
+                placeholder = { Text("wdtt://ip:dtls:wg:vpn:pass:hash#name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            OutlinedTextField(
+                value = peerInput,
+                onValueChange = { peerInput = it },
+                label = { Text("IP-сервера") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            OutlinedTextField(
+                value = vkHash1,
+                onValueChange = { vkHash1 = it },
+                label = { Text("VK Хеш 1 (Обязательно)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = vkHash2,
+                onValueChange = { vkHash2 = it },
+                label = { Text("VK Хеш 2 (Опционально)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = vkHash3,
+                onValueChange = { vkHash3 = it },
+                label = { Text("VK Хеш 3 (Опционально)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = vkHash4,
+                onValueChange = { vkHash4 = it },
+                label = { Text("VK Хеш 4 (Опционально)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            OutlinedTextField(
+                value = passwordInput,
+                onValueChange = { passwordInput = it },
+                label = { Text("Заданный пароль туннеля") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = serverDtlsPortInput,
+                    onValueChange = { serverDtlsPortInput = it },
+                    label = { Text("DTLS порт") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                OutlinedTextField(
+                    value = serverWgPortInput,
+                    onValueChange = { serverWgPortInput = it },
+                    label = { Text("WG порт") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                OutlinedTextField(
+                    value = localPortInput,
+                    onValueChange = { localPortInput = it },
+                    label = { Text("Локал. порт") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+        }
         
-        OutlinedTextField(
-            value = vkHash1,
-            onValueChange = { vkHash1 = it },
-            label = { Text("VK Хеш 1 (Обязательно)") },
-            modifier = Modifier.fillMaxWidth()
+        Text(
+            text = "Мощность (потоки): ${workersInput.toInt()}", 
+            fontWeight = FontWeight.SemiBold, 
+            color = MaterialTheme.colorScheme.onSurface 
         )
-        OutlinedTextField(
-            value = vkHash2,
-            onValueChange = { vkHash2 = it },
-            label = { Text("VK Хеш 2 (Опционально)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = vkHash3,
-            onValueChange = { vkHash3 = it },
-            label = { Text("VK Хеш 3 (Опционально)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = vkHash4,
-            onValueChange = { vkHash4 = it },
-            label = { Text("VK Хеш 4 (Опционально)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        
-        Text("Мощность (потоки): ${workersInput.toInt()}", fontWeight = FontWeight.SemiBold)
         Slider(
             value = workersInput,
             onValueChange = { workersInput = it },
-            valueRange = 1f..100f,
-            steps = 99,
+            valueRange = 1f..50f,
+            steps = 48,
             modifier = Modifier.fillMaxWidth()
         )
-        
-        OutlinedTextField(
-            value = passwordInput,
-            onValueChange = { passwordInput = it },
-            label = { Text("Заданный пароль туннеля") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = serverDtlsPortInput,
-                onValueChange = { serverDtlsPortInput = it },
-                label = { Text("DTLS порт") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-            OutlinedTextField(
-                value = serverWgPortInput,
-                onValueChange = { serverWgPortInput = it },
-                label = { Text("WG порт") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-            OutlinedTextField(
-                value = localPortInput,
-                onValueChange = { localPortInput = it },
-                label = { Text("Локал. порт") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-        }
         
         Spacer(Modifier.height(16.dp))
 
@@ -248,7 +320,7 @@ fun SettingsTabContent(context: android.content.Context, scope: kotlinx.coroutin
                 } else {
                     val vpnIntent = android.net.VpnService.prepare(context)
                     if (vpnIntent != null) {
-                        android.widget.Toast.makeText(context, "Откройте приложение и выдайте VPN-разрешение (если будет запрос)", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(context, "Откройте приложение и выдайте VPN-разрешение", android.widget.Toast.LENGTH_LONG).show()
                     }
                     startTunnelService()
                 }
