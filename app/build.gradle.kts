@@ -6,10 +6,13 @@ plugins {
 }
 
 android {
-    namespace = "com.wdttlite.client"
+    // ВАЖНО: namespace должен совпадать с пакетом в ваших .kt файлах,
+    // иначе классы R и BuildConfig не будут найдены кодом.
+    namespace = "com.wdtt.client"
     compileSdk = 35
 
     defaultConfig {
+        // applicationId может отличаться от namespace (это package name самого APK)
         applicationId = "com.wdttlite.client"
         minSdk = 28
         targetSdk = 35
@@ -47,7 +50,6 @@ android {
             if (keyFile != null) {
                 // Резолвим путь: если начинается с "..", берём от корня проекта
                 val resolvedFile = if (keyFile.startsWith("..")) {
-                    // ../release.keystore -> корень проекта / release.keystore
                     file(rootDir.resolve(keyFile.substring(3)))
                 } else {
                     file(keyFile)
@@ -75,6 +77,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            
             val keyFile = localProperties.getProperty("KEYSTORE_FILE")
             val resolvedFile = if (keyFile != null && keyFile.startsWith("..")) {
                 file(rootDir.resolve(keyFile.substring(3)))
@@ -105,7 +108,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
+        buildConfig = true // Включает генерацию BuildConfig
     }
 
     lint {
