@@ -48,7 +48,7 @@
             android:name=".QuickToggleTileService"
             android:exported="true"
             android:icon="@drawable/ic_tile_logo_w"
-            android:label="WDTT"
+            android:label="WDTT Lite"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

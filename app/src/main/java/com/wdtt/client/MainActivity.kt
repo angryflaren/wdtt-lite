@@ -68,9 +68,7 @@ import com.wdtt.client.ui.AppUpdateDialog
 import com.wdtt.client.ui.FloatingToolbar
 import com.wdtt.client.ui.LogsTab
 import com.wdtt.client.ui.SettingsTab
-import com.wdtt.client.ui.DeployTab
 import com.wdtt.client.ui.ExceptionsTab
-import com.wdtt.client.ui.InfoTab
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.first
@@ -211,10 +209,8 @@ private data class NavItem(
 
 private val navItems = listOf(
     NavItem(0, "Туннель", Icons.Filled.VpnKey, Icons.Outlined.VpnKey),
-    NavItem(1, "Деплой", Icons.Filled.Cloud, Icons.Outlined.Cloud),
     NavItem(2, "Исключ.", Icons.Filled.FilterList, Icons.Outlined.FilterList),
-    NavItem(3, "Логи", Icons.Filled.Terminal, Icons.Outlined.Terminal),
-    NavItem(4, "Инфо", Icons.Filled.Info, Icons.Outlined.Info),
+    NavItem(3, "Логи", Icons.Filled.Terminal, Icons.Outlined.Terminal)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -251,23 +247,7 @@ fun MainScreen(
     val safeBottomInset = with(density) { WindowInsets.safeDrawing.getBottom(density).toDp() }
     val navOverlayReserve = safeBottomInset + 96.dp
 
-    val activeNavItems = remember(wdttLinkMode) {
-        if (wdttLinkMode) {
-            navItems.filter { it.id != 1 }
-        } else {
-            navItems
-        }
-    }
-    val actionsExpanded = rememberSaveable { mutableStateOf(false) }
-    val projectExpanded = rememberSaveable { mutableStateOf(false) }
-
-
-
-    LaunchedEffect(wdttLinkMode) {
-        if (wdttLinkMode && selectedTab == 1) {
-            selectedTab = 0
-        }
-    }
+    val activeNavItems = remember { navItems }
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 3) TunnelManager.clearUnreadErrors()
@@ -389,10 +369,8 @@ fun MainScreen(
                 ) { tab ->
                     when (tab) {
                         0 -> SettingsTab()
-                        1 -> if (!wdttLinkMode) DeployTab() else Spacer(modifier = Modifier.fillMaxSize())
                         2 -> ExceptionsTab()
                         3 -> LogsTab()
-                        4 -> InfoTab(actionsExpandedState = actionsExpanded, projectExpandedState = projectExpanded)
                     }
                 }
 

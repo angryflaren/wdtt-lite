@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.wdtt.client"
+    namespace = "com.wdttlite.client"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.wdtt.client"
+        applicationId = "com.wdttlite.client"
         minSdk = 28
         targetSdk = 35
         versionCode = 122
